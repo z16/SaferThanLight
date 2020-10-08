@@ -1,115 +1,35 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.ComponentModel;
-using System.IO;
 using System.Linq;
-using System.Runtime.CompilerServices;
-using System.Text.Json;
-using System.Threading.Tasks;
 using System.Windows;
-using z16;
-using z16.Wpf;
+using System.Windows.Controls;
 
 namespace SaferThanLight {
-    public partial class MainWindow : INotifyPropertyChanged {
-        public MainWindow() {
-            InitializeComponent();
-        }
+    public partial class MainWindow {
+        public ViewModel ViewModel
+            => (ViewModel) DataContext;
 
-        public ObservableContentCollection<SaveEntry> SaveFiles { get; } = new ObservableContentCollection<SaveEntry>();
+        public MainWindow()
+            => InitializeComponent();
 
-        private async Task Save(SaveEntry? old = null) {
-            if (!File.Exists(Data.SaveFile)) {
-                return;
-            }
+        private async void SaveButton_Click(Object sender, RoutedEventArgs e)
+            => await ViewModel.Save();
 
-            var entry = await SaveEntry.Create();
-            if (old != null) {
-                entry.Description = old.Description;
-            }
+        private async void OverwriteButton_Click(Object sender, RoutedEventArgs e)
+            => await ViewModel.Overwrite((SaveEntry) FileGrid.SelectedItem);
 
-            if (File.Exists(entry.Filepath)) {
-                return;
-            }
-
-            File.Copy(Data.SaveFile, entry.Filepath);
-            SaveFiles.Add(entry);
-            FileGrid.SelectedIndex = SaveFiles.IndexOf(entry);
-        }
-
-        private void Load(SaveEntry entry) {
-            var backupName = Data.SaveFile + ".bak";
-            if (File.Exists(backupName)) {
-                File.Delete(backupName);
-            }
-
-            if (File.Exists(Data.SaveFile)) {
-                File.Move(Data.SaveFile, backupName);
-            }
-
-            File.Copy(Path.Combine(Data.SaveDirectory, entry.Filename), Data.SaveFile);
-        }
-
-        private void Delete(SaveEntry entry)
-            => Delete(entry.Yield());
-
-        private void Delete(IEnumerable<SaveEntry> entries) {
-            foreach (var entry in entries) {
-                try {
-                    File.Delete(entry.Filepath);
-                } catch (FileNotFoundException) { }
-            }
-
-            SaveFiles.RemoveRange(entries.Where(SaveFiles.Contains));
-        }
-
-        private async void SaveButton_Click(Object sender, RoutedEventArgs e) {
-            await Save();
-        }
-
-        private async void OverwriteButton_Click(Object sender, RoutedEventArgs e) {
-            if (FileGrid.SelectedItems.Count != 1) {
-                return;
-            }
-
-            var entry = (SaveEntry) FileGrid.SelectedItem;
-
-            await Save(entry);
-
-            Delete(entry);
-        }
-
-        private void LoadButton_Click(Object sender, RoutedEventArgs e) {
-            if (FileGrid.SelectedItems.Count != 1) {
-                return;
-            }
-
-            Load((SaveEntry) FileGrid.SelectedItem);
-        }
+        private void LoadButton_Click(Object sender, RoutedEventArgs e)
+            => ViewModel.Load((SaveEntry) FileGrid.SelectedItem);
 
         private void DeleteButton_Click(Object sender, RoutedEventArgs e)
-            => Delete(FileGrid.SelectedItems.Cast<SaveEntry>());
+            => ViewModel.Delete(FileGrid.SelectedItems.Cast<SaveEntry>());
 
-        private async void Window_Loaded(Object sender, RoutedEventArgs e) {
-            if (File.Exists(Data.MetaFile)) {
-                await using var stream = File.OpenRead(Data.MetaFile);
-                SaveFiles.AddRange(await JsonSerializer.DeserializeAsync<IEnumerable<SaveEntry>>(stream));
-            }
+        private void FileGrid_SelectedCellsChanged(Object sender, SelectedCellsChangedEventArgs e)
+            => ViewModel.SelectionCount = ((DataGrid) sender).SelectedItems.Count;
 
-            SaveFiles.CollectionChanged += OnChange;
-            SaveFiles.CollectionContentChanged += OnChange;
-            NotifyPropertyChanged("SaveFiles");
+        private async void Window_Loaded(Object sender, RoutedEventArgs e)
+            => await ViewModel.Initialize();
 
-            async void OnChange<T>(Object sender, T e) {
-                await using var stream = File.Open(Data.MetaFile, FileMode.Create, FileAccess.Write);
-                await JsonSerializer.SerializeAsync(stream, SaveFiles);
-            }
-        }
-
-        public event PropertyChangedEventHandler? PropertyChanged;
-
-        protected virtual void NotifyPropertyChanged([CallerMemberName] String? propertyName = null) {
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
-        }
+        private void Grid_MouseDown(Object sender, System.Windows.Input.MouseButtonEventArgs e)
+            => FileGrid.UnselectAll();
     }
 }
