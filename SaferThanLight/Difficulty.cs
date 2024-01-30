@@ -1,7 +1,7 @@
-﻿namespace SaferThanLight {
-    public enum Difficulty {
-        Easy,
-        Normal,
-        Hard,
-    }
+﻿namespace SaferThanLight;
+
+public enum Difficulty {
+	Easy,
+	Normal,
+	Hard,
 }

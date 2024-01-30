@@ -6,137 +6,137 @@ using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
 using System.Threading.Tasks;
-using z16;
+using z16.Core;
 using z16.Wpf;
 
-namespace SaferThanLight {
-    public class ViewModel : INotifyPropertyChanged {
-        public ObservableContentCollection<SaveEntry> SaveFiles { get; } = new ObservableContentCollection<SaveEntry>();
+namespace SaferThanLight;
 
-        public Int32? SelectedIndex {
-            get => SelectedIndexField;
-            set {
-                SelectedIndexField = value;
-                NotifyPropertyChanged();
-            }
-        }
+public class ViewModel : INotifyPropertyChanged {
+	public ObservableContentCollection<SaveEntry> SaveFiles { get; } = [];
 
-        public Int32 SelectionCount {
-            get => SelectionCountField;
-            set {
-                var previous = SelectionCountField;
-                SelectionCountField = value;
-                NotifyPropertyChanged();
+	public Int32? SelectedIndex {
+		get => SelectedIndexField;
+		set {
+			SelectedIndexField = value;
+			NotifyPropertyChanged();
+		}
+	}
 
-                if ((previous == 0) != (value == 0)) {
-                    NotifyPropertyChanged(nameof(AnySelected));
-                }
+	public Int32 SelectionCount {
+		get => SelectionCountField;
+		set {
+			var previous = SelectionCountField;
+			SelectionCountField = value;
+			NotifyPropertyChanged();
 
-                if ((previous == 1) != (value == 1)) {
-                    NotifyPropertyChanged(nameof(SingleSelected));
-                }
-            }
-        }
+			if (previous == 0 && value != 0 || previous != 0 || value == 0) {
+				NotifyPropertyChanged(nameof(AnySelected));
+			}
 
-        public Boolean AnySelected => SelectionCount != 0;
-        public Boolean SingleSelected => SelectionCount == 1;
-        public Boolean SaveFileExists {
-            get => SaveFileExistsField;
-            set {
-                SaveFileExistsField = value;
-                NotifyPropertyChanged();
-            }
-        }
+			if (previous == 1 && value != 1 || previous != 1 || value == 1) {
+				NotifyPropertyChanged(nameof(SingleSelected));
+			}
+		}
+	}
 
-        public async Task Initialize() {
-            SaveFiles.AddRange(await GetMetaEntries());
+	public Boolean AnySelected => SelectionCount != 0;
+	public Boolean SingleSelected => SelectionCount == 1;
+	public Boolean SaveFileExists {
+		get => SaveFileExistsField;
+		set {
+			SaveFileExistsField = value;
+			NotifyPropertyChanged();
+		}
+	}
 
-            SaveFiles.CollectionChanged += OnChange;
-            SaveFiles.CollectionContentChanged += OnChange;
+	public async Task Initialize() {
+		SaveFiles.AddRange(await GetMetaEntries());
 
-            NotifyPropertyChanged(nameof(SaveFiles));
+		SaveFiles.CollectionChanged += async (sender, e) => await OnChange(sender, e);
+		SaveFiles.CollectionContentChanged += async (sender, e) => await OnChange(sender, e);
 
-            Fsw.Created += (sender, e) => SaveFileExists = true;
-            Fsw.Deleted += (sender, e) => SaveFileExists = false;
-            Fsw.Renamed += (sender, e) => SaveFileExists = e.Name == "continue.sav";
-            Fsw.EnableRaisingEvents = true;
+		NotifyPropertyChanged(nameof(SaveFiles));
 
-            async void OnChange<T>(Object sender, T e) {
-                await using var stream = File.Open(Data.MetaFile, FileMode.Create, FileAccess.Write);
-                await JsonSerializer.SerializeAsync(stream, SaveFiles);
-            }
-        }
+		Fsw.Created += (sender, e) => SaveFileExists = true;
+		Fsw.Deleted += (sender, e) => SaveFileExists = false;
+		Fsw.Renamed += (sender, e) => SaveFileExists = e.Name == "continue.sav";
+		Fsw.EnableRaisingEvents = true;
 
-        public async Task Save(SaveEntry? old = null) {
-            if (!File.Exists(Data.SaveFile)) {
-                return;
-            }
+		async Task OnChange<T>(Object? sender, T e) {
+			await using var stream = File.Open(Data.MetaFile, FileMode.Create, FileAccess.Write);
+			await JsonSerializer.SerializeAsync(stream, SaveFiles);
+		}
+	}
 
-            var entry = await SaveEntry.Create();
-            if (old != null) {
-                entry.Description = old.Description;
-            }
+	public async Task Save(SaveEntry? old = null) {
+		if (!File.Exists(Data.SaveFile)) {
+			return;
+		}
 
-            if (File.Exists(entry.Filepath)) {
-                return;
-            }
+		var entry = await SaveEntry.Create();
+		if (old != null) {
+			entry.Description = old.Description;
+		}
 
-            File.Copy(Data.SaveFile, entry.Filepath);
-            SaveFiles.Add(entry);
-            SelectedIndex = SaveFiles.IndexOf(entry);
-        }
+		if (File.Exists(entry.Filepath)) {
+			return;
+		}
 
-        public async Task Overwrite(SaveEntry entry) {
-            await Save(entry);
+		File.Copy(Data.SaveFile, entry.Filepath);
+		SaveFiles.Add(entry);
+		SelectedIndex = SaveFiles.IndexOf(entry);
+	}
 
-            Delete(entry);
-        }
+	public async Task Overwrite(SaveEntry entry) {
+		await Save(entry);
 
-        public void Load(SaveEntry entry) {
-            var backupName = Data.SaveFile + ".bak";
-            if (File.Exists(backupName)) {
-                File.Delete(backupName);
-            }
+		Delete(entry);
+	}
 
-            if (File.Exists(Data.SaveFile)) {
-                File.Move(Data.SaveFile, backupName);
-            }
+	public static void Load(SaveEntry entry) {
+		var backupName = Data.SaveFile + ".bak";
+		if (File.Exists(backupName)) {
+			File.Delete(backupName);
+		}
 
-            File.Copy(Path.Combine(Data.SaveDirectory, entry.Filename), Data.SaveFile);
-        }
+		if (File.Exists(Data.SaveFile)) {
+			File.Move(Data.SaveFile, backupName);
+		}
 
-        public void Delete(SaveEntry entry)
-            => Delete(entry.Yield());
+		File.Copy(Path.Combine(Data.SaveDirectory, entry.Filename), Data.SaveFile);
+	}
 
-        public void Delete(IEnumerable<SaveEntry> entries) {
-            foreach (var entry in entries) {
-                try {
-                    File.Delete(entry.Filepath);
-                } catch (FileNotFoundException) { }
-            }
+	public void Delete(SaveEntry entry) =>
+		Delete(entry.Yield());
 
-            SaveFiles.RemoveRange(entries.Where(SaveFiles.Contains));
-        }
+	public void Delete(IEnumerable<SaveEntry> entries) {
+		foreach (var entry in entries) {
+			try {
+				File.Delete(entry.Filepath);
+			} catch (FileNotFoundException) { }
+		}
 
-        private async Task<IEnumerable<SaveEntry>> GetMetaEntries() {
-            if (!File.Exists(Data.MetaFile)) {
-                return Enumerable.Empty<SaveEntry>();
-            }
+		SaveFiles.RemoveRange(entries.Where(SaveFiles.Contains));
+	}
 
-            await using var stream = File.OpenRead(Data.MetaFile);
-            return await JsonSerializer.DeserializeAsync<IEnumerable<SaveEntry>>(stream);
-        }
+	private static async Task<IEnumerable<SaveEntry>> GetMetaEntries() {
+		if (!File.Exists(Data.MetaFile)) {
+			return Enumerable.Empty<SaveEntry>();
+		}
 
-        private Int32? SelectedIndexField;
-        private Int32 SelectionCountField = 0;
-        private Boolean SaveFileExistsField = File.Exists(Data.SaveFile);
+		await using var stream = File.OpenRead(Data.MetaFile);
+		return (await JsonSerializer.DeserializeAsync<IEnumerable<SaveEntry>>(stream))!;
+	}
 
-        private FileSystemWatcher Fsw = new FileSystemWatcher(Data.SaveDirectory, "continue.sav");
+	private Int32? SelectedIndexField;
+	private Int32 SelectionCountField = 0;
+	private Boolean SaveFileExistsField = File.Exists(Data.SaveFile);
 
-        public event PropertyChangedEventHandler? PropertyChanged;
+	private readonly FileSystemWatcher Fsw = new(Data.SaveDirectory, "continue.sav");
 
-        protected virtual void NotifyPropertyChanged([CallerMemberName] String? propertyName = null) {
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
-        }
-    }
+	public event PropertyChangedEventHandler? PropertyChanged;
+
+	protected virtual void NotifyPropertyChanged([CallerMemberName] String? propertyName = null) {
+		PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+	}
 }
